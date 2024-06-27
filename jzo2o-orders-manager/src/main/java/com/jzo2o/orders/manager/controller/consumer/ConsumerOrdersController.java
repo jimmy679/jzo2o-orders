@@ -33,6 +33,8 @@ public class ConsumerOrdersController {
 
     @Resource
     private IOrdersManagerService ordersManagerService;
+    @Resource
+    private IOrdersCreateService ordersCreateService;
 
 
     @GetMapping("/{id}")
@@ -52,5 +54,12 @@ public class ConsumerOrdersController {
     public List<OrderSimpleResDTO> consumerQueryList(@RequestParam(value = "ordersStatus", required = false) Integer ordersStatus,
                                                      @RequestParam(value = "sortBy", required = false) Long sortBy) {
         return ordersManagerService.consumerQueryList(UserContext.currentUserId(), ordersStatus, sortBy);
+    }
+
+    @ApiOperation("下单接口")
+    @PostMapping("/place")
+    public PlaceOrderResDTO place(@RequestBody PlaceOrderReqDTO placeOrderReqDTO) {
+        PlaceOrderResDTO placeOrderResDTO = ordersCreateService.placeOrder(placeOrderReqDTO);
+        return placeOrderResDTO;
     }
 }

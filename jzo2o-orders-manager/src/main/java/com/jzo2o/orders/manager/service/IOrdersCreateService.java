@@ -28,6 +28,6 @@ import java.util.List;
  * @since 2023-07-10
  */
 public interface IOrdersCreateService extends IService<Orders> {
-
+    public PlaceOrderResDTO placeOrder(PlaceOrderReqDTO placeOrderReqDTO);
 
 }
