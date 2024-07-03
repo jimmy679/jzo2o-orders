@@ -11,19 +11,27 @@ import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
 import com.jzo2o.api.orders.dto.response.OrderResDTO;
 import com.jzo2o.api.orders.dto.response.OrderSimpleResDTO;
+import com.jzo2o.api.trade.enums.PayChannelEnum;
+import com.jzo2o.common.constants.UserType;
 import com.jzo2o.common.enums.EnableStatusEnum;
 import com.jzo2o.common.expcetions.CommonException;
+import com.jzo2o.common.utils.BeanUtils;
 import com.jzo2o.common.utils.ObjectUtils;
+import com.jzo2o.orders.base.enums.OrderPayStatusEnum;
 import com.jzo2o.orders.base.enums.OrderStatusEnum;
 import com.jzo2o.orders.base.mapper.OrdersMapper;
 import com.jzo2o.orders.base.model.domain.Orders;
 import com.jzo2o.orders.base.model.domain.OrdersCanceled;
+import com.jzo2o.orders.base.model.domain.OrdersRefund;
 import com.jzo2o.orders.base.model.dto.OrderSnapshotDTO;
 import com.jzo2o.orders.base.model.dto.OrderUpdateStatusDTO;
 import com.jzo2o.orders.base.service.IOrdersCommonService;
 import com.jzo2o.orders.manager.model.dto.OrderCancelDTO;
+import com.jzo2o.orders.manager.model.dto.response.OrdersPayResDTO;
 import com.jzo2o.orders.manager.service.IOrdersCanceledService;
+import com.jzo2o.orders.manager.service.IOrdersCreateService;
 import com.jzo2o.orders.manager.service.IOrdersManagerService;
+import com.jzo2o.orders.manager.service.IOrdersRefundService;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -52,6 +60,10 @@ public class OrdersManagerServiceImpl extends ServiceImpl<OrdersMapper, Orders> 
     private IOrdersCommonService ordersCommonService;
     @Resource
     private OrdersManagerServiceImpl ordersManagerServiceImpl;
+    @Resource
+    private IOrdersCreateService ordersCreateService;
+    @Resource
+    private IOrdersRefundService ordersRefundService;
     @Override
     public List<Orders> batchQuery(List<Long> ids) {
         LambdaQueryWrapper<Orders> queryWrapper = Wrappers.<Orders>lambdaQuery().in(Orders::getId, ids).ge(Orders::getUserId, 0);
@@ -99,9 +111,30 @@ public class OrdersManagerServiceImpl extends ServiceImpl<OrdersMapper, Orders> 
     @Override
     public OrderResDTO getDetail(Long id) {
         Orders orders = queryById(id);
+        //懒加载方式取消支付超时订单
+        orders = canalIfPayOvertime(orders);
+        //需要在返回前执行此步骤，因为下一步即将进行结果封装返回
         OrderResDTO orderResDTO = BeanUtil.toBean(orders, OrderResDTO.class);
         return orderResDTO;
     }
+    //懒加载方式取消支付超时订单
+    public Orders canalIfPayOvertime(Orders orders){
+        if(orders.getOrdersStatus() == OrderStatusEnum.NO_PAY.getStatus() && orders.getCreateTime().plusMinutes(15).isBefore(LocalDateTime.now())){
+            //查询最新支付状态，看是否是未支付
+            OrdersPayResDTO payResultFromTradServer = ordersCreateService.getPayResultFromTradServer(orders.getId());
+            if(ObjectUtils.isNotEmpty(payResultFromTradServer) && payResultFromTradServer.getPayStatus()!= OrderPayStatusEnum.PAY_SUCCESS.getStatus()){
+                //修改订单状态为取消
+                OrderCancelDTO orderCancelDTO = BeanUtil.toBean(orders, OrderCancelDTO.class);
+                orderCancelDTO.setCurrentUserType(UserType.SYSTEM);
+                orderCancelDTO.setCancelReason("订单超时支付，自动取消");
+                cancel(orderCancelDTO);
+                orders = getById(orders.getId());
+            }
+        }
+        return orders;
+    }
+
+
 
     /**
      * 订单评价
@@ -139,11 +172,12 @@ public class OrdersManagerServiceImpl extends ServiceImpl<OrdersMapper, Orders> 
             ordersManagerServiceImpl.cancelByNoPay(orderCancelDTO);
         }else if(OrderStatusEnum.DISPATCHING.getStatus()==ordersStatus){
             //订单状态为派单中
-
+            //向数据库保存三条记录：orders_canceled、orders_refund、orders
+            //抽取单独方法
+            ordersManagerServiceImpl.cancelByDispatching(orderCancelDTO);
         }else{
             throw new CommonException("当前订单状态不支持取消");
         }
-
     }
 
 
@@ -169,4 +203,34 @@ public class OrdersManagerServiceImpl extends ServiceImpl<OrdersMapper, Orders> 
         }
     }
 
+
+    //取消派单中订单方法
+    @Transactional(rollbackFor = Exception.class)
+    public void cancelByDispatching(OrderCancelDTO orderCancelDTO){
+        //向数据库保存三条记录：orders_canceled、orders_refund、orders
+        //保存取消订单记录
+        OrdersCanceled ordersCanceled = BeanUtil.toBean(orderCancelDTO, OrdersCanceled.class);
+        ordersCanceled.setCancellerId(orderCancelDTO.getCurrentUserId());
+        ordersCanceled.setCancelerName(orderCancelDTO.getCurrentUserName());
+        ordersCanceled.setCancellerType(orderCancelDTO.getCurrentUserType());
+        ordersCanceled.setCancelTime(LocalDateTime.now());
+        ordersCanceledService.save(ordersCanceled);
+        //更新订单状态为关闭订单
+        //update orders set orders_status = 700 where id = ? and orders_status = 100;
+        OrderUpdateStatusDTO orderUpdateStatusDTO = OrderUpdateStatusDTO.builder()
+                .id(orderCancelDTO.getId())
+                .originStatus(OrderStatusEnum.DISPATCHING.getStatus())
+                .targetStatus(OrderStatusEnum.CLOSED.getStatus())
+                .build();
+        int result = ordersCommonService.updateStatus(orderUpdateStatusDTO);
+        if (result <= 0) {
+            throw new DbRuntimeException("订单取消事件处理失败");
+        }
+        //保存退款记录
+        OrdersRefund ordersRefund= BeanUtils.toBean(orderCancelDTO,OrdersRefund.class);
+        boolean save = ordersRefundService.save(ordersRefund);
+        if (!save){
+            log.info("保存派单中订单退款记录失败！");
+        }
+    }
 }

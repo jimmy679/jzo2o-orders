@@ -42,6 +42,7 @@ import org.springframework.transaction.annotation.Transactional;
 import javax.annotation.Resource;
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
+import java.util.List;
 
 import static com.jzo2o.common.constants.ErrorInfo.Code.TRADE_FAILED;
 import static com.jzo2o.orders.base.constants.RedisConstants.Lock.ORDERS_SHARD_KEY_ID_GENERATOR;
@@ -270,6 +271,17 @@ public class OrdersCreateServiceImpl extends ServiceImpl<OrdersMapper, Orders> i
         }
 
 
+    }
+
+    @Override
+    public List<Orders> queryOverTimePayOrdersListByCount(Integer count) {
+        //未支付且时间超过15MIN
+        List<Orders> list = lambdaQuery()
+                .eq(Orders::getOrdersStatus, OrderStatusEnum.NO_PAY.getStatus())
+                .lt(Orders::getCreateTime, LocalDateTime.now().minusMinutes(15))
+                .last("limit" + count)
+                .list();
+        return list;
     }
 
     //生成二维码
