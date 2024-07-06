@@ -10,6 +10,7 @@ import com.jzo2o.common.utils.BeanUtils;
 import com.jzo2o.common.utils.ObjectUtils;
 import com.jzo2o.orders.base.enums.OrderRefundStatusEnum;
 import com.jzo2o.orders.base.mapper.OrdersMapper;
+import com.jzo2o.orders.base.mapper.OrdersRefundMapper;
 import com.jzo2o.orders.base.model.domain.Orders;
 import com.jzo2o.orders.base.model.domain.OrdersRefund;
 import com.jzo2o.orders.manager.model.dto.OrderCancelDTO;
@@ -40,6 +41,7 @@ public class OrdersHandler {
     private OrdersHandler ordersHandler;
     @Resource
     private OrdersMapper ordersMapper;
+
     //取消订单定时任务
     @XxlJob(value = "cancelOverTimePayOrder")
     public void cancelOverTimePayOrder(){
@@ -107,5 +109,19 @@ public class OrdersHandler {
             //非退款中状态，删除申请退款记录，删除后定时任务不再扫描
             ordersRefundService.removeById(ordersRefund.getId());
         }
+    }
+
+    /**
+     * 新起一个线程，即时退款
+     */
+    public void requestRefundNewThread(Long orderRefundId) {
+        new Thread(()->{
+            //根据订单Id查询orders_refund
+            OrdersRefund ordersRefund = ordersRefundService.getById(orderRefundId);
+            if (ObjectUtils.isNotNull(ordersRefund)) {
+                //请求支付服务
+                requestRefundOrder(ordersRefund);
+            }
+        }).start();
     }
 }

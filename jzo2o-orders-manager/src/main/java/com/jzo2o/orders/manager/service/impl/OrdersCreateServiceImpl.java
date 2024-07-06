@@ -1,5 +1,9 @@
 package com.jzo2o.orders.manager.service.impl;
 
+import com.jzo2o.orders.base.config.OrderStateMachine;
+import com.jzo2o.orders.base.enums.OrderStatusChangeEventEnum;
+import com.jzo2o.orders.base.model.dto.OrderSnapshotDTO;
+import lombok.extern.slf4j.Slf4j;
 import cn.hutool.core.bean.BeanUtil;
 import cn.hutool.core.util.ObjectUtil;
 import cn.hutool.db.DbRuntimeException;
@@ -34,7 +38,7 @@ import com.jzo2o.orders.manager.model.dto.response.PlaceOrderResDTO;
 import com.jzo2o.orders.manager.porperties.TradeProperties;
 import com.jzo2o.orders.manager.service.IOrdersCreateService;
 import com.jzo2o.orders.manager.service.impl.client.CustomerClient;
-import lombok.extern.slf4j.Slf4j;
+
 import org.springframework.data.redis.core.RedisTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -75,6 +79,8 @@ public class OrdersCreateServiceImpl extends ServiceImpl<OrdersMapper, Orders> i
     private TradeProperties tradeProperties;
     @Resource
     private TradingApi tradingApi;
+    @Resource
+    private OrderStateMachine orderStateMachine;
 
     /**
      * 生成订单id 格式：{yyMMdd}{13位id}
@@ -247,7 +253,7 @@ public class OrdersCreateServiceImpl extends ServiceImpl<OrdersMapper, Orders> i
             return;
         }
         //校验订单状态如果不是待支付状态则不作处理
-        if (ObjectUtils.notEqual(OrderStatusEnum.NO_PAY.getStatus(),orders.getOrdersStatus())) {
+        if (ObjectUtils.notEqual(OrderStatusEnum.NO_PAY,orders.getOrdersStatus())) {
             log.info("更新订单支付成功，当前订单:{}状态不是待支付状态", orders.getId());
         }
 
@@ -256,28 +262,34 @@ public class OrdersCreateServiceImpl extends ServiceImpl<OrdersMapper, Orders> i
             throw new CommonException("支付成功通知缺少第三方支付单号");
         }
         //更新订单的支付状态及第三方交易单号等信息
-        boolean update = lambdaUpdate()
-                .eq(Orders::getId, orders.getId())
-                .set(Orders::getPayTime, LocalDateTime.now())//支付时间
-                .set(Orders::getTradingOrderNo, tradeStatusMsg.getTradingOrderNo())//交易单号
-                .set(Orders::getTradingChannel, tradeStatusMsg.getTradingChannel())//支付渠道
-                .set(Orders::getTransactionId, tradeStatusMsg.getTransactionId())//第三方支付交易号
-                .set(Orders::getPayStatus, OrderPayStatusEnum.PAY_SUCCESS.getStatus())//支付状态
-                .set(Orders::getOrdersStatus, OrderStatusEnum.DISPATCHING.getStatus())//订单状态更新为派单中
-                .update();
-        if(!update){
-            log.info("更新订单:{}支付成功失败", orders.getId());
-            throw new CommonException("更新订单"+orders.getId()+"支付成功失败");
-        }
-
-
+//        boolean update = lambdaUpdate()
+//                .eq(Orders::getId, orders.getId())
+//                .set(Orders::getPayTime, LocalDateTime.now())//支付时间
+//                .set(Orders::getTradingOrderNo, tradeStatusMsg.getTradingOrderNo())//交易单号
+//                .set(Orders::getTradingChannel, tradeStatusMsg.getTradingChannel())//支付渠道
+//                .set(Orders::getTransactionId, tradeStatusMsg.getTransactionId())//第三方支付交易号
+//                .set(Orders::getPayStatus, OrderPayStatusEnum.PAY_SUCCESS.getStatus())//支付状态
+//                .set(Orders::getOrdersStatus, OrderStatusEnum.DISPATCHING)//订单状态更新为派单中
+//                .update();
+//        if(!update){
+//            log.info("更新订单:{}支付成功失败", orders.getId());
+//            throw new CommonException("更新订单"+orders.getId()+"支付成功失败");
+//        }
+        //使用状态机将待支付状态改为派单中
+        OrderSnapshotDTO orderSnapshotDTO = OrderSnapshotDTO.builder()
+                .payTime(LocalDateTime.now())
+                .tradingOrderNo(tradeStatusMsg.getTradingOrderNo())
+                .tradingChannel(tradeStatusMsg.getTradingChannel())
+                .thirdOrderId(tradeStatusMsg.getTransactionId())
+                .build();
+        orderStateMachine.changeStatus(orders.getUserId(),tradeStatusMsg.getTradingOrderNo().toString(), OrderStatusChangeEventEnum.PAYED, orderSnapshotDTO);
     }
 
     @Override
     public List<Orders> queryOverTimePayOrdersListByCount(Integer count) {
         //未支付且时间超过15MIN
         List<Orders> list = lambdaQuery()
-                .eq(Orders::getOrdersStatus, OrderStatusEnum.NO_PAY.getStatus())
+                .eq(Orders::getOrdersStatus, OrderStatusEnum.NO_PAY)
                 .lt(Orders::getCreateTime, LocalDateTime.now().minusMinutes(15))
                 .last("limit" + count)
                 .list();
@@ -328,11 +340,14 @@ public class OrdersCreateServiceImpl extends ServiceImpl<OrdersMapper, Orders> i
     }
     //优化由于网络延时等可能带来的数据库连接长时间占用
     @Transactional(rollbackFor = Exception.class)
-    public void add(Orders orders){
-        //保存订单
+    public void add(Orders orders) {
         boolean save = this.save(orders);
         if (!save) {
             throw new DbRuntimeException("下单失败");
         }
+        //构建快照对象
+        OrderSnapshotDTO orderSnapshotDTO = BeanUtil.toBean(baseMapper.selectById(orders.getId()), OrderSnapshotDTO.class);
+        //状态机启动
+        orderStateMachine.start(orders.getUserId(),String.valueOf(orders.getId()),orderSnapshotDTO);
     }
 }
