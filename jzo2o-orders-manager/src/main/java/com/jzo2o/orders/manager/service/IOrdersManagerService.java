@@ -70,4 +70,29 @@ public interface IOrdersManagerService extends IService<Orders> {
      */
     void cancel(OrderCancelDTO orderCancelDTO);
 
+    /**
+     * 管理端 - 分页查询
+     *
+     * @param orderPageQueryReqDTO 分页查询条件
+     * @return 分页结果
+     */
+    PageResult<OrderSimpleResDTO> operationPageQuery(OrderPageQueryReqDTO orderPageQueryReqDTO);
+
+
+    /**
+     * 管理端 - 分页查询订单id列表
+     *
+     * @param orderPageQueryReqDTO 分页查询模型
+     * @return 分页结果
+     */
+    Page<Long> operationPageQueryOrdersIdList(OrderPageQueryReqDTO orderPageQueryReqDTO);
+
+    /**
+     * 根据订单id列表查询并排序
+     *
+     * @param orderPageQueryReqDTO 订单分页查询请求
+     * @return 订单列表
+     */
+    List<Orders> queryAndSortOrdersListByIds(OrderPageQueryReqDTO orderPageQueryReqDTO);
+
 }

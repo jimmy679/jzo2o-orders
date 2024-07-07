@@ -26,5 +26,13 @@ import javax.annotation.Resource;
 @RequestMapping("/operation/orders")
 public class OperationOrdersController {
 
+    @Resource
+    private IOrdersManagerService ordersManagerService;
+
+    @GetMapping("/page")
+    @ApiOperation("订单分页查询")
+    public PageResult<OrderSimpleResDTO> page(OrderPageQueryReqDTO orderPageQueryReqDTO) {
+        return ordersManagerService.operationPageQuery(orderPageQueryReqDTO);
+    }
 
 }
