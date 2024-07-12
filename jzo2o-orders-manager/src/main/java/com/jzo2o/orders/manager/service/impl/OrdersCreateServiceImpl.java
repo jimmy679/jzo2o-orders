@@ -1,8 +1,13 @@
 package com.jzo2o.orders.manager.service.impl;
 
+import com.jzo2o.api.market.dto.CouponApi;
+import com.jzo2o.api.market.dto.request.CouponUseReqDTO;
+import com.jzo2o.api.market.dto.response.AvailableCouponsResDTO;
+import com.jzo2o.api.market.dto.response.CouponUseResDTO;
 import com.jzo2o.orders.base.config.OrderStateMachine;
 import com.jzo2o.orders.base.enums.OrderStatusChangeEventEnum;
 import com.jzo2o.orders.base.model.dto.OrderSnapshotDTO;
+import com.jzo2o.orders.manager.service.impl.client.MarketClient;
 import lombok.extern.slf4j.Slf4j;
 import cn.hutool.core.bean.BeanUtil;
 import cn.hutool.core.util.ObjectUtil;
@@ -81,6 +86,10 @@ public class OrdersCreateServiceImpl extends ServiceImpl<OrdersMapper, Orders> i
     private TradingApi tradingApi;
     @Resource
     private OrderStateMachine orderStateMachine;
+    @Resource
+    private MarketClient marketClient;
+    @Resource
+    private CouponApi couponApi;
 
     /**
      * 生成订单id 格式：{yyMMdd}{13位id}
@@ -162,8 +171,35 @@ public class OrdersCreateServiceImpl extends ServiceImpl<OrdersMapper, Orders> i
         //排序字段,根据服务开始时间转为毫秒时间戳+订单后5位
         long sortBy = DateUtils.toEpochMilli(orders.getServeStartTime()) + orders.getId() % 100000;
         orders.setSortBy(sortBy);
-        owner.add(orders);
+
+        //保存订单
+//        owner.add(orders);
+        // 使用优惠券下单
+        if (ObjectUtils.isNotNull(placeOrderReqDTO.getCouponId())) {
+            // 使用优惠券
+            owner.addWithCoupon(orders, placeOrderReqDTO.getCouponId());
+        } else {
+            // 无优惠券下单，走本地事务
+            owner.add(orders);
+        }
         return new PlaceOrderResDTO(orders.getId());
+    }
+
+    @Transactional(rollbackFor = Exception.class)
+    public void addWithCoupon(Orders orders, Long couponId) {
+        CouponUseReqDTO couponUseReqDTO = new CouponUseReqDTO();
+        couponUseReqDTO.setOrdersId(orders.getId());
+        couponUseReqDTO.setId(couponId);
+        couponUseReqDTO.setTotalAmount(orders.getTotalAmount());
+        //优惠券核销
+        CouponUseResDTO couponUseResDTO = couponApi.use(couponUseReqDTO);
+        // 设置优惠金额
+        orders.setDiscountAmount(couponUseResDTO.getDiscountAmount());
+        // 计算实付金额
+        BigDecimal realPayAmount = orders.getTotalAmount().subtract(orders.getDiscountAmount());
+        orders.setRealPayAmount(realPayAmount);
+        //保存订单
+        add(orders);
     }
 
     /**
@@ -294,6 +330,21 @@ public class OrdersCreateServiceImpl extends ServiceImpl<OrdersMapper, Orders> i
                 .last("limit" + count)
                 .list();
         return list;
+    }
+
+    @Override
+    public List<AvailableCouponsResDTO> getAvailableCoupons(Long serveId, Integer purNum) {
+        //远程调用获取单价
+        ServeAggregationResDTO serveResDTO = serveApi.findById(serveId);
+        if (serveResDTO == null || serveResDTO.getSaleStatus() != 2) {
+            throw new BadRequestException("服务不可用");
+        }
+        //计算总价
+        BigDecimal totalAmount = serveResDTO.getPrice().multiply(BigDecimal.valueOf(purNum));
+        //远程调用获取优惠券列表
+        List<AvailableCouponsResDTO> couponsResDTOS = marketClient.getAvailable(totalAmount);
+        //返回结果
+        return couponsResDTOS;
     }
 
     //生成二维码

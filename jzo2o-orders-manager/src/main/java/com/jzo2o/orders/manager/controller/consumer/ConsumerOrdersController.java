@@ -93,4 +93,16 @@ public class ConsumerOrdersController {
         orderCancelDTO.setCurrentUserType(currentUserInfo.getUserType());
         ordersManagerService.cancel(orderCancelDTO);
     }
+
+    @GetMapping("/getAvailableCoupons")
+    @ApiOperation("获取可用优惠券")
+    @ApiImplicitParams({
+            @ApiImplicitParam(name = "serveId", value = "服务id", required = true, dataTypeClass = Integer.class),
+            @ApiImplicitParam(name = "purNum", value = "购买数量，默认1", required = false, dataTypeClass = Long.class)
+    })
+    public List<AvailableCouponsResDTO> getCoupons(@RequestParam(value = "serveId", required = true) Long serveId,
+                                                   @RequestParam(value = "purNum", required = false, defaultValue = "1") Integer purNum) {
+        List<AvailableCouponsResDTO> availableCoupons = ordersCreateService.getAvailableCoupons(serveId, purNum);
+        return availableCoupons;
+    }
 }
