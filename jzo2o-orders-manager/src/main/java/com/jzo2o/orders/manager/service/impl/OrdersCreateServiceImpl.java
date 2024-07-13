@@ -8,6 +8,7 @@ import com.jzo2o.orders.base.config.OrderStateMachine;
 import com.jzo2o.orders.base.enums.OrderStatusChangeEventEnum;
 import com.jzo2o.orders.base.model.dto.OrderSnapshotDTO;
 import com.jzo2o.orders.manager.service.impl.client.MarketClient;
+import io.seata.spring.annotation.GlobalTransactional;
 import lombok.extern.slf4j.Slf4j;
 import cn.hutool.core.bean.BeanUtil;
 import cn.hutool.core.util.ObjectUtil;
@@ -185,7 +186,8 @@ public class OrdersCreateServiceImpl extends ServiceImpl<OrdersMapper, Orders> i
         return new PlaceOrderResDTO(orders.getId());
     }
 
-    @Transactional(rollbackFor = Exception.class)
+//    @Transactional(rollbackFor = Exception.class)
+    @GlobalTransactional
     public void addWithCoupon(Orders orders, Long couponId) {
         CouponUseReqDTO couponUseReqDTO = new CouponUseReqDTO();
         couponUseReqDTO.setOrdersId(orders.getId());
