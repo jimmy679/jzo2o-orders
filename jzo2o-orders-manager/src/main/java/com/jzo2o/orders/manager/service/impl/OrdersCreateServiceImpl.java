@@ -19,7 +19,8 @@ import com.jzo2o.api.customer.dto.response.InstitutionStaffResDTO;
 import com.jzo2o.api.customer.dto.response.ServeProviderResDTO;
 import com.jzo2o.api.foundations.ServeApi;
 import com.jzo2o.api.foundations.dto.response.ServeAggregationResDTO;
-import com.jzo2o.api.market.CouponApi;
+
+import com.jzo2o.api.market.dto.CouponApi;
 import com.jzo2o.api.market.dto.request.CouponUseBackReqDTO;
 import com.jzo2o.api.market.dto.request.CouponUseReqDTO;
 import com.jzo2o.api.market.dto.response.AvailableCouponsResDTO;

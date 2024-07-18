@@ -21,4 +21,6 @@ public interface HistoryOrdersSyncMapper extends BaseMapper<HistoryOrdersSync> {
 
     List<StatHour> statForHour(@Param("queryDay") Integer queryDay);
 
+    List<StatDay> statForDay(@Param("queryDay") Integer queryDay);
+
 }

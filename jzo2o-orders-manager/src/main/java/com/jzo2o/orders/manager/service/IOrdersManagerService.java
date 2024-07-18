@@ -59,7 +59,8 @@ public interface IOrdersManagerService extends IService<Orders> {
      * @param orderCancelDTO 取消订单模型
      */
     void cancel(OrderCancelDTO orderCancelDTO);
-
+    void cancelWithCoupon(OrderCancelDTO orderCancelDTO, CouponUseBackReqDTO couponUseBackReqDTO);
+    void cancelWithoutCoupon(OrderCancelDTO orderCancelDTO);
 
 
     /**

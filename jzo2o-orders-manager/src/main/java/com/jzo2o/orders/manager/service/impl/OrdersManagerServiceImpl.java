@@ -19,7 +19,8 @@ import com.jzo2o.api.customer.dto.response.InstitutionStaffResDTO;
 import com.jzo2o.api.customer.dto.response.ServeProviderResDTO;
 import com.jzo2o.api.foundations.ServeApi;
 import com.jzo2o.api.foundations.dto.response.ServeAggregationResDTO;
-import com.jzo2o.api.market.CouponApi;
+
+import com.jzo2o.api.market.dto.CouponApi;
 import com.jzo2o.api.market.dto.request.CouponUseBackReqDTO;
 import com.jzo2o.api.market.dto.request.CouponUseReqDTO;
 import com.jzo2o.api.market.dto.response.AvailableCouponsResDTO;
@@ -501,8 +502,31 @@ public class OrdersManagerServiceImpl extends ServiceImpl<OrdersMapper, Orders> 
      */
     @Override
     public void cancel(OrderCancelDTO orderCancelDTO) {
+        // 1.有优惠金额的回滚优惠券（当前优惠金额均来自优惠券）
+        Orders orders = getById(orderCancelDTO.getId());
+        if (ObjectUtils.isNull(orders.getDiscountAmount()) || orders.getDiscountAmount().compareTo(BigDecimal.ZERO) > 0) {
+            CouponUseBackReqDTO couponUseBackReqDTO = new CouponUseBackReqDTO();
+            couponUseBackReqDTO.setOrdersId(orderCancelDTO.getId());
+            couponUseBackReqDTO.setUserId(orders.getUserId());
+            //需要取消优惠券核销要使用分布式事务控制
+            owner.cancelWithCoupon(orderCancelDTO, couponUseBackReqDTO);
+        } else {
+            //使用本地事务控制即可
+            owner.cancelWithoutCoupon(orderCancelDTO);
+        }
+    }
 
+    @Override
+    @GlobalTransactional
+    public void cancelWithCoupon(OrderCancelDTO orderCancelDTO, CouponUseBackReqDTO couponUseBackReqDTO) {
+        couponApi.useBack(couponUseBackReqDTO);
+        orderCancelStrategyManager.cancel(orderCancelDTO);
+    }
 
+    @Override
+    @Transactional
+    public void cancelWithoutCoupon(OrderCancelDTO orderCancelDTO) {
+        orderCancelStrategyManager.cancel(orderCancelDTO);
     }
 
 

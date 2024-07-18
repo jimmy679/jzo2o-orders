@@ -4,6 +4,7 @@ import com.jzo2o.api.foundations.RegionApi;
 import com.jzo2o.api.foundations.dto.response.RegionServeInfoResDTO;
 import com.jzo2o.common.constants.UserType;
 import com.jzo2o.common.model.CurrentUserInfo;
+import com.jzo2o.common.utils.DateUtils;
 import com.jzo2o.mvc.utils.UserContext;
 import com.jzo2o.orders.base.model.domain.OrdersDispatch;
 import lombok.extern.slf4j.Slf4j;
@@ -39,7 +40,7 @@ class IDispatchServiceTest {
     public void testSortedSet_add(){
         for (int i = 0; i < 10; i++) {
             //向key为：test_sortedset的sortedset中添加10个元素，value为i，socre为i(转为double)
-            redisTemplate.opsForZSet().add("test_sortedset",i,i*1d);
+            redisTemplate.opsForZSet().add("test_sortedset",i, DateUtils.getCurrentTime()*1d);
         }
 
     }
